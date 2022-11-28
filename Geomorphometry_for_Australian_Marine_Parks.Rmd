@@ -1,0 +1,203 @@
+---
+title: "Geomorphometry of Australian Marine Parks"
+author: "Jacquomo Monk"
+date: '2022-07-12'
+output: html_document
+---
+
+## **1.0 Background**
+This is an RMarkdown file for calculating Geomorphometric features in Australian Marine Parks for Seamap Australia. The document was produced by <jacquomo.monk@utas.edu.au> and uses the geomorphron and generalized classified raster functions from whitebox tools. Processing was funded under Our Marine Parks Grant from Parks Australia.
+
+## **2.0 House keeping**
+First load required packages. There some extra steps are required to get whitebox tools running in R. Instructions can be found at <https://www.whiteboxgeo.com/manual/wbt_book/r_interface.html>.
+
+Also note you may need to manually get leaflet directly from github repo if you have issues with side-by-side maps below. This can be done running the following: remotes::install_github("rstudio/leaflet", ref="joe/feature/raster-options")
+
+### **2.1 Load packages**
+```{r}
+if(!require(openxlsx)) install.packages("openxlsx", repos = "http://cran.us.r-project.org")
+if(!require(whitebox)) install.packages("whitebox", repos = "http://cran.us.r-project.org")
+if(!require(ggplot2)) install.packages("ggplot2", repos = "http://cran.us.r-project.org")
+if(!require(raster)) install.packages("raster", repos = "http://cran.us.r-project.org")
+if(!require(mapview)) install.packages("mapview", repos = "http://cran.us.r-project.org")
+if(!require(leaflet)) install.packages("leaflet", repos = "http://cran.us.r-project.org")
+if(!require(leafem)) install.packages("leafem", repos = "http://cran.us.r-project.org")
+if(!require(leaflet.extras2)) install.packages("leaflet.extras2", repos = "http://cran.us.r-project.org")
+```
+
+### **2.2 Make sure you are working from the correct directory** 
+Note make sure this file is saved in the same directory as your data.
+```{r}
+getwd()
+```
+## **3.0 Now it is time to run the geomorphrons classification**
+There are three main attributes to change in the geomorphron function. These are search, threshold and tdist values. The 'search' distance (in cells) defines the focal analysis window. The larger search distances tend to pick up larger features. I have found 10 is a good default. Note that raster resolution will change these values. The 'threshold' parameter defines the flatness threshold for the classification function (in degrees). Alter threshold depending on what kind of features you wish to delineate. The 'tdist parameter (in cells) defines the distance to begin reducing the flatness threshold to avoid problems with pseudo-flat lines-of-sight.
+
+Note if your raster data is >3GB you may want to consider upscaling or subsetting your rasters to get classification running.
+
+### **3.1 Parameters used for geomorphron function**
+For the Australian Marine Parks the following parameters were used:
+```{r, echo=FALSE}
+p1<- openxlsx::read.xlsx("./Parameters.xlsx",sheet = 1, colNames = T, rowNames = F)
+```
+
+```{r,results='asis'}
+p1%>%
+  knitr::kable(caption = "Table 1: Parameters used for the geomorphron classification for the Australian Marine Parks")
+```
+### **3.2 Time to run the geomorphometry classification**
+This will automatically output classfied raster into your working directory.
+```{r, echo=FALSE}
+dem <-"./Example_Bathymetry.tif"#Edit to reflect your bath data name
+
+wbt_geomorphons(
+  dem,
+  "./Example_geomorphometry.tif",#Change as required
+  search = 10,#Change as required
+  threshold = 10,#Change as required
+  tdist = 10,#Change as required
+  forms = TRUE,#Classify geomorphons into 10 common land morphologies, else, output ternary code
+  verbose_mode = FALSE,
+  compress_rasters = TRUE
+)
+```
+
+### **3.3 Checking time**
+It is a good idea to check classification output raster against hillshaded bathymetry to see how well you are delineating up features.
+
+#### **3.4.1 Make the hillshaded bathymetry**
+This will be used in plotting.
+```{r, echo=FALSE}
+wbt_hillshade( 
+  dem,
+  "./Example_hillshade5z.tif",#Change as required
+  azimuth = 315,
+  altitude = 30,
+  zfactor = 5,
+  verbose_mode = FALSE,
+  compress_rasters = TRUE,
+  command_only = FALSE
+)
+```
+
+#### **3.4.2 Now it is time to plot up a map with geomorphometry next to a hillshade to check parameters** 
+Be patient here as this map can take time to load and navigate around. Note the geomorphometry class value is displayed in top right. A key is provided at end of document. You will need to read in bathymetry, geomorphometry and hillshade rasters for plotting.
+
+Key thing to check here is how well the different classes depict the changes in bathymetry.
+
+```{r}
+bath<-raster(dem)
+hs<-raster("Example_hillshade5z.tif")
+geom<-raster("Example_geomorphometry.tif")#change to reflect what you called this above
+geom@file@nodatavalue <- -32768 #set nodata value
+#Set colour palette 
+pal1 <- colorRampPalette(c("Blue","Brown","Yellow")) #bathymetry
+pal2 <- colorRampPalette(c("grey0", "grey100")) #hillshade
+#Set colour palette
+pal3 <- colorNumeric(c("#FFFCCC", "#CC0000", "#660000","#996600","#FF9800","#666600","#0033FF","#99CC33","#000033","#00CCFF"), values(geom), na.color = "transparent")
+
+# side by side map
+leaflet() %>% 
+  addMapPane("left",  zIndex = 0) %>%
+  addMapPane("right", zIndex = 0) %>%
+  addTiles(group = "base", layerId = "baseid",
+           options = pathOptions(pane = "right")) %>%
+  addTiles(group = "carto", layerId = "cartoid",
+           options = pathOptions(pane = "left")) %>%
+  addRasterImage(hs, colors = pal2(10), 
+                 options = leafletOptions(pane = "left"), group = "hs") %>%
+  addRasterImage(bath, colors = pal1(30), 
+                 options = leafletOptions(pane = "left"), group = "bath", opacity = 0.5) %>%
+  addRasterImage(hs, colors = pal2(10), 
+                 options = leafletOptions(pane = "right"), group = "hs") %>%
+  addRasterImage(geom, colors = pal3, 
+                 options = leafletOptions(pane = "right"), group = "geom", opacity = 0.5) %>%
+  # addLayersControl(overlayGroups = c("hs", "geom")) %>% 
+  addSidebyside(layerId = "sidecontrols",
+                rightId = "baseid",
+                leftId  = "cartoid")%>%
+  addMouseCoordinates() %>%
+  addImageQuery(geom, type="mousemove", layerId = "values")%>%
+  addLayersControl(overlayGroups = "values")
+```
+
+## **4.0 Removal of noise pixels** 
+Sometimes you have too much 'salt and pepper' effects in classification caused by bad cell values in original bathymetry raster. Let's try and remove this noise using the Generalized Classified Raster function. Note this function requires purchasing a licence, which can be found here: <https://www.whiteboxgeo.com/manual/wbt_book/available_tools/image_processing_tools_classification.html?highlight=generalize#generalizeclassifiedraster>.
+
+Here you have two settings to play with: 1) The Minimum feature size, in grid cells. You can edit this to target small or large island pixels. 2) The grouping method. You can choose from one of 'longest' (default), 'largest', and 'nearest'. Have a play and change as required.
+
+### **4.1 Parameters used for Generalized Classified Raster function**
+For the Australian Marine Parks the following parameters were used.
+```{r, echo=FALSE}
+
+p2<-read.xlsx("./Parameters.xlsx",sheet = 2, colNames = T, rowNames = F)
+```
+
+```{r,results='asis'}
+p2%>%
+  knitr::kable(caption = "Table 2: Parameters used for the Generalized Classified Raster function for the Australian Marine Parks")
+```
+
+### **4.2 Run the Generalized Classified Raster function**
+This will automatically output filtered raster into your working directory.
+```{r, echo=FALSE}
+gr<-"./Example_geomorphometry.tif" ##Edit to reflect your geomorphometry raster defined loaded above
+
+wbt_generalize_classified_raster(
+  gr,
+  "./Example_geomorphometry_filtered.tif",#Change as required
+  min_size=15, #Change as required
+  method="longest",#Change as required
+  verbose_mode = TRUE,
+  compress_rasters = FALSE
+)
+```
+
+### **4.3 Now it is time to plot up a map to check parameters** 
+The side-by-side map to contrasts filtering effect (right hand side) with original geomorphometry classification (left hand side). Note the filtered gemorphometry class value is provided in top right. Remember be patient this can take a moment to run!
+
+```{r}
+geom2<-raster("Example_geomorphometry_filtered.tif")#change to reflect what you called this above
+
+geom2@file@nodatavalue <- -32768 #set do data value
+
+# side by side map
+leaflet() %>% 
+  addMapPane("left",  zIndex = 0) %>%
+  addMapPane("right", zIndex = 0) %>%
+  addTiles(group = "base", layerId = "baseid",
+           options = pathOptions(pane = "right")) %>%
+  addTiles(group = "carto", layerId = "cartoid",
+           options = pathOptions(pane = "left")) %>%
+  addRasterImage(hs, colors = pal2(10), 
+                 options = leafletOptions(pane = "left"), group = "hs") %>%
+  addRasterImage(hs, colors = pal2(10), 
+                 options = leafletOptions(pane = "right"), group = "hs") %>%
+  addRasterImage(geom, colors = pal3, 
+                 options = leafletOptions(pane = "left"), group = "geom", opacity = 0.5) %>%
+    addRasterImage(geom2, colors = pal3, 
+                 options = leafletOptions(pane = "right"), group = "geom2", opacity = 0.5) %>%
+  addLayersControl(overlayGroups = c("hs", "geom", "geom2")) %>% 
+  addSidebyside(layerId = "sidecontrols",
+                rightId = "baseid",
+                leftId  = "cartoid")%>%
+  addImageQuery(geom2, type="mousemove", layerId = "values")%>%
+  addLayersControl(overlayGroups = "values")
+```
+
+## **5.0 Description of geomorphmetry classes**
+```{r, echo=FALSE}
+p3<-read.xlsx("./Parameters.xlsx",sheet = 3, colNames = T, rowNames = F)
+```
+
+```{r,results='asis'}
+p3%>%
+  knitr::kable(caption = "Table 3: Description of geomorphmetry class values associated with the geomorphometry of Australian Marine Parks")
+```
+
+
+***Warning.*** This note pad has not been tested on large raster datasets (i.e. >13GB). Leaflet is known to not handle large datasets well. In such instances "addGeoRaster()" or "addGeotiff()" may be a good substitute for "addRasterImage()". Note I have not tried this.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the Preview button or press Ctrl+Shift+K to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike Knit, Preview does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
