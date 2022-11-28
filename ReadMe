@@ -1,0 +1,9 @@
+This readme describes the contents of https://github.com/jacquomo/Geomorphmetry_SeamapAus repo.
+The repo is open to use for anyone but does require a paid WhiteBoxTools extension (details provided in RMarkdown Notebooks. 
+Any errors/bugs can be reported to jacquomo.monk@utas.edu.au 
+
+
+The repo contains three files:
+1. An RMarkdown Notebook file containing the workflow for generating Geomorphometric Classifications contained within SeaMapAustralia
+2. An Excel spreadsheet containing the parameters need to recreate the Geomorphometric Classifications
+3. Example bathymetry (geotif) that is used in the example RMarkdown Notebook
